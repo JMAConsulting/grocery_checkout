@@ -1,0 +1,15 @@
+name = Grocery Checkout using iATS
+description = Developed by JMA to process individual payments for grocery items with future payments.
+package = Commerce (contrib)
+
+dependencies[] = commerce
+dependencies[] = commerce_payment
+dependencies[] = commerce_order
+dependencies[] = commerce_iats
+
+core = 7.x
+
+; Information added by Drupal.org packaging script on 2016-10-07
+version = "7.x-1"
+core = "7.x"
+project = "grocery_checkout"
