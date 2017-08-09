@@ -53,6 +53,14 @@ function grocery_checkout_schema() {
       ),
     ),
     'primary key' => array('id'),
+    'indexes' => array(
+      'order_id_index' => array('order_id'),
+      'line_item_id_index' => array('line_item_id'),
+      'customer_code_index' => array('customer_code'),
+    ),
+    'unique keys' => array(
+      'line_item_id' => array('line_item_id'),
+    ),
   );
   return $schema;
 }
