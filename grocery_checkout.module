@@ -63,7 +63,6 @@ function addPayments($response, $payment_method, $payment_data, $order, $lineite
 
     // Create pending transactions and
     // insert the lineitems in our table for processing future payments.
-
     foreach ($lineitems as $item_id => $attributes) {
       $transaction = commerce_payment_transaction_new($payment_method['method_id'], $order->order_id);
       $transaction->amount = commerce_currency_decimal_to_amount($attributes['charge']['amount'], $attributes['charge']['currency']);
@@ -92,4 +91,15 @@ function addPayments($response, $payment_method, $payment_data, $order, $lineite
       }
     }
   }
+}
+
+function grocery_checkout_cron() {
+echo "called";exit;
+  // Check if pending order date matches current date.
+  $query = db_select('grocery_checkout_schedule', 'g');
+  $query->innerJoin('commerce_payment_transaction', 'p', 'p.transaction_id = g.transaction_id');
+  $query->condition('p.status', 'pending', '=')
+    ->execute() 
+    ->fetchAll();
+  print_R($query);exit;
 }
