@@ -1,29 +1,11 @@
-// $Id$
-/**
-* @file
-* Module for managing installation of iATS customer table.
-*/
-
-/**
-* Implementation of hook_install().
-*/
-function grocery_checkout_install() {
-  // Use schema API to create database table.
-  drupal_install_schema('grocery_checkout');
-}
-
-/**
-* Implementation of hook_uninstall().
-*/
-function grocery_checkout_uninstall() {
-  // Use schema API to create database table.
-  drupal_uninstall_schema('grocery_checkout');
-}
+<?php
 
 /**
 * Implementation of hook_schema().
 */
 function grocery_checkout_schema() {
+  $schema = array();
+
   $schema['grocery_checkout_schedule'] = array(
     'description' => t('Stores scheduled payments for grocery items.'),
     'fields' => array(
