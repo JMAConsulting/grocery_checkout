@@ -94,12 +94,34 @@ function addPayments($response, $payment_method, $payment_data, $order, $lineite
 }
 
 function grocery_checkout_cron() {
-echo "called";exit;
   // Check if pending order date matches current date.
-  $query = db_select('grocery_checkout_schedule', 'g');
+  $query = db_select('grocery_checkout_schedule', 'g')
+    ->fields('g')
+    ->condition('p.status', 'pending', '=')
+    ->range(0, 2);
   $query->innerJoin('commerce_payment_transaction', 'p', 'p.transaction_id = g.transaction_id');
-  $query->condition('p.status', 'pending', '=')
-    ->execute() 
-    ->fetchAll();
-  print_R($query);exit;
+  $result = $query->execute()->fetchAll();
+  $payment_method = commerce_payment_method_instance_load('iats_credit_card_customer_code|rules_test_future');
+  if (!empty($result)) {
+    foreach ($result as $id => $object) {
+      $amount = explode(' ', $object->amount);
+      $request = array(
+        'customerIPAddress' => ip_address(),
+        'customerCode' => $object->customer_code,
+        'invoiceNum' => $object->transaction_id,
+        'mop' => 'VISA', // The customer's method of payment.
+        'total' => $amount[0],
+        'comment' => 'Order ID ' . $object->order_id,
+        'currency' => $amount[1],
+        'cvv2' => 123,
+      );
+      $iats = commerce_iats_get_service('ProcessLink', $payment_method);
+      if ($iats == NULL) {
+        watchdog('grocery_checkout', t('Unable to load iATS Payments library.'), WATCHDOG_ERROR);
+        return NULL;
+      }
+
+      $response = $iats->processCreditCardWithCustomerCode($request);
+    }
+  }
 }
