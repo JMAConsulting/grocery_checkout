@@ -33,10 +33,28 @@ function grocery_checkout_schema() {
         'unsigned' => TRUE,
         'not null' => TRUE,
       ),
+      'order_id' => array(
+        'description' => 'The order ID.',
+        'type' => 'int',
+        'length' => 64,
+        'not null' => TRUE,
+      ),
+      'line_item_id' => array(
+        'description' => 'The line item ID.',
+        'type' => 'int',
+        'length' => 64,
+        'not null' => TRUE,
+      ),
       'customer_code' => array(
         'description' => 'The customer code for the individual.',
         'type' => 'varchar',
         'length' => 64,
+        'not null' => TRUE,
+      ),
+      'amount' => array(
+        'description' => 'The payment amount.',
+        'type' => 'varchar',
+        'length' => 32,
         'not null' => TRUE,
       ),
       'scheduled_date' => array(
