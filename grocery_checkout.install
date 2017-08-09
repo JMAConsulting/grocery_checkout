@@ -27,6 +27,12 @@ function grocery_checkout_schema() {
         'length' => 64,
         'not null' => TRUE,
       ),
+      'transaction_id' => array(
+        'description' => 'The transaction ID of the pending payment.',
+        'type' => 'int',
+        'length' => 64,
+        'not null' => TRUE,
+      ),
       'customer_code' => array(
         'description' => 'The customer code for the individual.',
         'type' => 'varchar',
@@ -56,6 +62,7 @@ function grocery_checkout_schema() {
     'indexes' => array(
       'order_id_index' => array('order_id'),
       'line_item_id_index' => array('line_item_id'),
+      'transaction_id_index' => array('transaction_id'),
       'customer_code_index' => array('customer_code'),
     ),
     'unique keys' => array(
