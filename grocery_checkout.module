@@ -3,6 +3,54 @@
 define('PAYMENT_INSTANCE', 'iats_credit_card_customer_code|rules_test_future');
 define('BATCH', 2);
 
+function grocery_checkout_menu() {
+  $items['admin/commerce/orders/ajax/%/payment/%/cancel'] = array(
+    'title' => 'Cancel',
+    'page callback' => 'cancel_payment',
+    'delivery_callback' => 'ajax_deliver',
+    'page arguments' => array(4, 6),
+    'access arguments' => array('update payments'),
+    'type' => MENU_CALLBACK
+  );
+  $items['admin/commerce/orders/ajax/%/payment/%/enable'] = array(
+    'title' => 'Enable',
+    'page callback' => 'enable_payment',
+    'delivery_callback' => 'ajax_deliver',
+    'page arguments' => array(4, 6),
+    'access arguments' => array('update payments'),
+    'type' => MENU_CALLBACK
+  );
+  return $items;
+}
+
+function cancel_payment($order_id, $payment_id) {
+  db_merge('grocery_checkout_schedule')
+    ->key(array('transaction_id' => $payment_id))
+    ->fields(array(
+      'is_cancelled' => 1,
+      ))
+      ->execute();
+  $content = '<a id="enablelink" class="use-ajax" href="' . url("admin/commerce/orders/ajax/{$order_id}/payment/{$payment_id}/enable", array('absolute' => TRUE)) . '">Enable</a>';
+  $commands = array();
+  $commands[] = ajax_command_replace('#cancellink', $content);
+  $page = array('#type' => 'ajax', '#commands' => $commands);
+  ajax_deliver($page);
+}
+
+function enable_payment($order_id, $payment_id) {
+  db_merge('grocery_checkout_schedule')
+    ->key(array('transaction_id' => $payment_id))
+    ->fields(array(
+      'is_cancelled' => 0,
+      ))
+      ->execute();
+  $content = '<a id="cancellink" class="use-ajax" href="' . url("admin/commerce/orders/ajax/{$order_id}/payment/{$payment_id}/Cancel", array('absolute' => TRUE)) . '">Cancel</a>';
+  $commands = array();
+  $commands[] = ajax_command_replace('#enablelink', $content);
+  $page = array('#type' => 'ajax', '#commands' => $commands);
+  ajax_deliver($page);
+}
+
 function grocery_checkout_get_webform_submission($order) {
   $orderID = $order->order_id;
   $lineitems = array();
@@ -223,6 +271,7 @@ function grocery_checkout_cron() {
     ->fields('p', array('payload'))
     ->condition('p.status', 'pending', '=')
     ->condition('g.is_cancelled', 0, '=')
+    ->where("DATE(g.scheduled_date) = DATE(NOW())")
     ->range(0, BATCH);
   $query->innerJoin('commerce_payment_transaction', 'p', 'p.transaction_id = g.transaction_id');
   $result = $query->execute()->fetchAll();
@@ -251,3 +300,85 @@ function grocery_checkout_cron() {
     }
   }
 }
+
+function check_grocery_order($order_id) {
+  $result = db_select('grocery_checkout_schedule', 'g')
+      ->fields('g')
+      ->condition('order_id', $order_id, '=')
+      ->execute()
+      ->fetchAll();
+  return $result;
+}
+
+function grocery_checkout_views_pre_build(&$view) {
+  if ($view->name == 'commerce_payment_order') {
+    if (check_grocery_order($view->args[0])) {
+      unset($view->field['payment_method']);
+      unset($view->field['operations_1']);
+    }
+    else {
+     unset($view->field['type']);
+     unset($view->field['mail']);
+     unset($view->field['order_id']);  
+     unset($view->field['order_number']);     
+     unset($view->field['remote_status']);
+    }
+  }
+}
+
+function grocery_checkout_views_query_alter(&$view, &$query) {
+  if ($view->name == 'commerce_payment_order') {
+    if ($result = check_grocery_order($view->args[0])) {
+      $join = new views_join();
+      $join->table = "commerce_line_item";
+      $join->field = "line_item_id";
+      $join->left_table = "commerce_payment_transaction";
+      $join->left_field = "line_item_id";
+      $join->type = "inner";
+      $query->add_relationship('line_items', $join, 'commerce');
+      $query->add_field('line_items', 'quantity', 'commerce_line_item_quantity');
+      $query->add_field('line_items', 'line_item_label', 'commerce_line_item_label');
+    }
+  }
+}
+
+function grocery_checkout_views_pre_render(&$view) {
+  if ($view->name == 'commerce_payment_order') {
+    if ($result = check_grocery_order($view->args[0])) {
+      foreach ($view->result as $resultkey => &$row) {
+        $row->commerce_order_mail = $row->commerce_line_item_label;
+        $row->commerce_order_order_number = (int)$row->commerce_line_item_quantity;
+        $row->commerce_payment_transaction_created = date('jS M Y', $row->commerce_payment_transaction_created);
+        $html[$resultkey][] = '<ul class="links inline operations">
+          <li><a href="' . url("admin/commerce/orders/{$row->commerce_order_order_id}/payment/{$row->transaction_id}/view", array('absolute' => TRUE)) . '">View</a></li>';
+        foreach ($result as $object) {
+          if ($object->transaction_id == $row->transaction_id) {
+            $row->commerce_order_uid = date('jS M Y', strtotime($object->scheduled_date));
+            // Show cancellation link only before order is processed. After which show delete link.
+            if (date('Ymd') < date('Ymd', strtotime($object->scheduled_date))) {
+              if ($object->is_cancelled) {
+                $html[$resultkey][] = '<li><a id="enablelink" class="use-ajax"
+                href="' . url("admin/commerce/orders/ajax/{$row->commerce_order_order_id}/payment/{$row->transaction_id}/enable", array('absolute' => TRUE)) . '">Enable</a></li></ul>';
+              }
+              else {
+                $html[$resultkey][] = '<li><a id="cancellink" class="use-ajax"
+                href="' . url("admin/commerce/orders/ajax/{$row->commerce_order_order_id}/payment/{$row->transaction_id}/cancel", array('absolute' => TRUE)) . '">Cancel</a></li></ul>';
+              }
+            }
+            elseif (date('Ymd') > date('Ymd', strtotime($object->scheduled_date))) {
+              $html[$resultkey][] = '<li><a href="' . url("admin/commerce/orders/ajax/{$row->commerce_order_order_id}/payment/{$row->transaction_id}/delete", array('absolute' => TRUE)) . '">Delete</a></li></ul>';
+            }
+          }
+        }
+      }
+      foreach ($html as $key => $text) {
+        $html[$key] = implode('', $text);
+        $view->style_plugin->render_fields($view->result);
+        foreach ($view->style_plugin->rendered_fields as $index => &$rendered_result) {
+            $rendered_result['remote_status'] = $html[$index];
+        }
+      }
+    }
+  }
+}
+
