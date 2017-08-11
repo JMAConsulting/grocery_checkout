@@ -1,7 +1,7 @@
 <?php
 
 define('PAYMENT_INSTANCE', 'iats_credit_card_customer_code|rules_test_future');
-define('BATCH', 2);
+define('BATCH', 1);
 
 function grocery_checkout_menu() {
   $items['admin/commerce/orders/ajax/%/payment/%/cancel'] = array(
@@ -284,7 +284,7 @@ function grocery_checkout_cron() {
         'customerIPAddress' => ip_address(),
         'customerCode' => $object->customer_code,
         'invoiceNum' => $object->transaction_id,
-        'mop' => $payload['type'],
+        'mop' => strtoupper($payload['type']),
         'total' => $amount[0],
         'comment' => 'Order ID ' . $object->order_id,
         'currency' => $amount[1],
@@ -294,7 +294,6 @@ function grocery_checkout_cron() {
         watchdog('grocery_checkout', t('Unable to load iATS Payments library.'), WATCHDOG_ERROR);
         return NULL;
       }
-
       $response = $iats->processCreditCardWithCustomerCode($request);
       processResponse($response, $payment_method, $object->transaction_id); 
     }
