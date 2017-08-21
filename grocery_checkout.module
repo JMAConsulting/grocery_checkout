@@ -1,6 +1,6 @@
 <?php
 
-define('PAYMENT_INSTANCE', 'iats_credit_card_customer_code|rules_test_future');
+define('PAYMENT_INSTANCE', 'iats_ach_eft_customer_code|rules_grocery_card');
 define('BATCH', 1);
 
 function grocery_checkout_menu() {
@@ -95,7 +95,7 @@ function getDates($formkey) {
   $start = $values[1];
   $end = $values[2];
   $year = "";
-  if (in_array($month, array('Oct', 'Nov', 'Dec'))) {
+  if (in_array($month, array('Aug', 'Oct', 'Nov', 'Dec'))) {
     $year = 2017;
   }
   elseif (in_array($month, array('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'))) {
@@ -213,7 +213,7 @@ function processResponse($response, $payment_method, $payment_id) {
         $transaction->status = COMMERCE_PAYMENT_STATUS_SUCCESS;
         $message = array('Transaction successful.');
         if (!is_null($customer_code)) {
-          $message[] = 'Payment has been processed ' . date('jS M Y', strtotime($response['SETTLEMENTDATE']));
+          $message[] = 'Payment has been processed ' . date('jS M Y');
         }
       }
     }
@@ -222,7 +222,7 @@ function processResponse($response, $payment_method, $payment_id) {
         $transaction->status = COMMERCE_PAYMENT_STATUS_SUCCESS;
         $message = array('Transaction successful.');
         if (!is_null($customer_code)) {
-          $message[] = 'Payment has been processed on ' . date('jS M Y', strtotime($response['SETTLEMENTDATE']));
+          $message[] = 'Payment has been processed on ' . date('jS M Y');
         }
       }
       else {
@@ -284,7 +284,6 @@ function grocery_checkout_cron() {
         'customerIPAddress' => ip_address(),
         'customerCode' => $object->customer_code,
         'invoiceNum' => $object->transaction_id,
-        'mop' => strtoupper($payload['type']),
         'total' => $amount[0],
         'comment' => 'Order ID ' . $object->order_id,
         'currency' => $amount[1],
@@ -294,7 +293,7 @@ function grocery_checkout_cron() {
         watchdog('grocery_checkout', t('Unable to load iATS Payments library.'), WATCHDOG_ERROR);
         return NULL;
       }
-      $response = $iats->processCreditCardWithCustomerCode($request);
+      $response = $iats->ProcessACHEFTWithCustomerCode($request);
       processResponse($response, $payment_method, $object->transaction_id); 
     }
   }
