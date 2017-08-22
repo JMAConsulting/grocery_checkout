@@ -381,7 +381,7 @@ function grocery_checkout_views_pre_render(&$view) {
 }
 
 function grocery_checkout_webform_csv_header_alter(&$header, $component) {
-  if ($component['nid'] == 517) {
+  if ($component['nid'] == 517 && $component['type'] == 'productfield') {
     foreach ($header[2] as &$label) {
       $month = explode(' ', $component['name']);
       $label = str_replace(":", ' '.$month[1].":", $label);
