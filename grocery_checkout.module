@@ -121,10 +121,11 @@ function addPayments($response, $payment_method, $payment_data, $order, $lineite
       $transaction->payload = array(
         'type' => $payment_data['bank_account']['type'],
       );
+      $transaction->payment_method = 'iats_ach_eft_customer_code';
       $transaction->status = COMMERCE_PAYMENT_STATUS_PENDING;
       $date = date('jS M Y', strtotime($attributes['dates']['beginDate']));
       // Change date to 9th of every month
-      $date = date('9S M Y', strtotime($attributes['dates']['beginDate']));
+      $date = '9th ' . date('M Y', strtotime($attributes['dates']['beginDate']));
       $transaction->message = t("Payment will be processed on {$date}");
 
       // Save the transaction information.
@@ -265,7 +266,48 @@ function processResponse($response, $payment_method, $payment_id) {
   }
 }
 
+function generatePayments() {
+  $query = db_select('grocery_checkout_schedule', 'g')
+    ->fields('g', array('order_id', 'customer_code'))
+    ->condition('g.is_cancelled', 0, '=')
+    ->groupBy('g.order_id');
+  $query->addExpression('COUNT(g.order_id)', 'ncount');
+  $query->havingCondition('ncount', 1);
+  $result = $query->execute()->fetchAll();
+  if (!empty($result)) {
+    foreach ($result as $id => $object) {
+      $commercepayment = db_select('commerce_payment_transaction', 't')
+        ->fields('t', array('amount', 'status', 'payload'))
+        ->condition('t.order_id', $object->order_id, '=');
+      $trxns = $commercepayment->execute()->fetchAll();
+      $lineitemamounts = array();
+      foreach ($trxns as $trxn) {
+        if ($trxn->status != 'success') {
+          $lineitemamounts[] = $trxn->amount;
+        }
+        else {
+          $totalamount = $trxn->amount;
+          $payload = unserialize($trxn->payload);
+        }
+      }
+      $lineitemamount = array_sum($lineitemamounts);
+      if ($lineitemamount != $totalamount) {
+        $order = new stdClass();
+        $order->order_id = $object->order_id; 
+        $lineitems = grocery_checkout_get_webform_submission($order);
+        $response = array('CUSTOMERCODE' => $object->customer_code);
+        $paymentdata = array('bank_account' => $payload);
+        db_delete('grocery_checkout_schedule')
+          ->condition('order_id', $object->order_id)
+          ->execute();
+        addPayments($response, $payment_method, $paymentdata, $order, $lineitems);
+      }
+    }
+  }
+}
+
 function grocery_checkout_cron() {
+  generatePayments();
   // Check if pending order date matches current date.
   $query = db_select('grocery_checkout_schedule', 'g')
     ->fields('g')
