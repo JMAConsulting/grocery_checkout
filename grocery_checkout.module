@@ -119,7 +119,7 @@ function addPayments($response, $payment_method, $payment_data, $order, $lineite
       $transaction->currency_code = $attributes['charge']['currency'];
       $transaction->line_item_id = $attributes['line_item_id'];
       $transaction->payload = array(
-        'type' => $payment_data['credit_card']['type'],
+        'type' => $payment_data['bank_account']['type'],
       );
       $transaction->status = COMMERCE_PAYMENT_STATUS_PENDING;
       $date = date('jS M Y', strtotime($attributes['dates']['beginDate']));
