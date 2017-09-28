@@ -124,19 +124,21 @@ function addPayments($response, $payment_method, $payment_data, $order, $lineite
       );
       $transaction->status = COMMERCE_PAYMENT_STATUS_PENDING;
       $date = date('jS M Y', strtotime($attributes['dates']['beginDate']));
+      // Change date to 9th of every month
+      $date = date('9S M Y', strtotime($attributes['dates']['beginDate']));
       $transaction->message = t("Payment will be processed on {$date}");
 
       // Save the transaction information.
       $pending_payment = commerce_payment_transaction_save($transaction);
       if ($pending_payment) {
-        db_merge('grocery_checkout_schedule')
-          ->key(array('line_item_id' => $attributes['line_item_id']))
+        db_insert('grocery_checkout_schedule')
           ->fields(array(
             'order_id' => $attributes['order_id'],
             'customer_code' => $response['CUSTOMERCODE'],
             'transaction_id' => $transaction->transaction_id,
             'amount' => $attributes['charge']['amount'] . ' ' . $attributes['charge']['currency'],
-            'scheduled_date' => $attributes['dates']['beginDate'],
+            'scheduled_date' => date('Y-m-09', strtotime($attributes['dates']['beginDate'])),
+            'line_item_id' => $attributes['line_item_id'],
           ))
           ->execute();
       }
@@ -271,8 +273,7 @@ function grocery_checkout_cron() {
     ->fields('p', array('payload'))
     ->condition('p.status', 'pending', '=')
     ->condition('g.is_cancelled', 0, '=')
-    ->where("DATE(g.scheduled_date) = DATE(NOW())")
-    ->range(0, BATCH);
+    ->where("DATE(g.scheduled_date) = DATE(NOW())");
   $query->innerJoin('commerce_payment_transaction', 'p', 'p.transaction_id = g.transaction_id');
   $result = $query->execute()->fetchAll();
   $payment_method = commerce_payment_method_instance_load(PAYMENT_INSTANCE);
