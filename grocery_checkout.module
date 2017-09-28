@@ -1,7 +1,6 @@
 <?php
 
 define('PAYMENT_INSTANCE', 'iats_ach_eft_customer_code|rules_grocery_card');
-define('BATCH', 1);
 
 function grocery_checkout_menu() {
   $items['admin/commerce/orders/ajax/%/payment/%/cancel'] = array(
@@ -341,12 +340,24 @@ function grocery_checkout_views_query_alter(&$view, &$query) {
   }
 }
 
+function getQuantity($lineitem) {
+  $query = db_select('commerce_payment_transaction', 't')
+    ->fields('a', array('commerce_price_amount'))
+    ->condition('t.transaction_id', $lineitem->transaction_id, '=');
+  $query->innerJoin('commerce_line_item', 'l', 'l.line_item_id = t.line_item_id');
+  $query->innerJoin('commerce_product', 'p', 'p.sku = l.line_item_label');
+  $query->innerJoin('field_data_commerce_price', 'a', 'a.entity_id = p.product_id');
+  $amount = $query->execute()->fetchAll();
+  return $lineitem->commerce_payment_transaction_amount / $amount[0]->commerce_price_amount;
+}
+
 function grocery_checkout_views_pre_render(&$view) {
   if ($view->name == 'commerce_payment_order') {
     if ($result = check_grocery_order($view->args[0])) {
       foreach ($view->result as $resultkey => &$row) {
         $row->commerce_order_mail = $row->commerce_line_item_label;
-        $row->commerce_order_order_number = (int)$row->commerce_line_item_quantity;
+        $quantity = getQuantity($row);
+        $row->commerce_order_order_number = (int)$quantity;
         $row->commerce_payment_transaction_created = date('jS M Y', $row->commerce_payment_transaction_created);
         $html[$resultkey][] = '<ul class="links inline operations">
           <li><a href="' . url("admin/commerce/orders/{$row->commerce_order_order_id}/payment/{$row->transaction_id}/view", array('absolute' => TRUE)) . '">View</a></li>';
