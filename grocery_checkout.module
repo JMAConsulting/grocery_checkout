@@ -442,3 +442,38 @@ function grocery_checkout_webform_csv_header_alter(&$header, $component) {
     }
   }
 }
+
+function grocery_checkout_form_webform_client_form_528_alter(&$form, &$form_state, $form_id) {
+  global $user;
+  if ($user->uid) {
+    // User is logged in and can access the webform.
+
+    $query = db_select('commerce_payment_transaction', 't')
+      ->fields('t')
+      ->fields('g', array('amount', 'line_item_id', 'scheduled_date', 'order_id'))
+      ->condition('t.uid', $user->uid, '=')
+      ->condition('t.status', 'failure', '=');
+    $query->innerJoin('grocery_checkout_schedule', 'g', 'g.transaction_id = t.transaction_id');
+    $result = $query->execute()->fetchAll();
+    
+    if (!empty($result)) {
+      foreach ($result as $key => $object) {
+        $form['submitted']['order']['#value'] = $object->order_id;
+        $form['submitted']['order']['#attributes'] = array('readonly' => 'readonly');
+        $lineitem = db_select('webform_submitted_data', 'w')
+          ->fields('w', array('cid', 'nid', 'data'))
+          ->condition('data', '%"line_item_id":"' . db_like($object->line_item_id) . '"%', 'LIKE')
+          ->condition('nid', 517, '=')
+          ->execute()
+          ->fetchAll();
+        foreach ($lineitem as $items) {
+          $json = json_decode($items->data); 
+          $productIds[] = $json->product_id;
+      
+        }
+          $form['submitted']['sku']['#productids'] = $productIds;
+        
+      }
+    }
+  }
+}
