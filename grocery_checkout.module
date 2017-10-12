@@ -76,6 +76,23 @@ function grocery_checkout_get_webform_submission($order) {
       }
     }
   }
+  else {
+    $result = db_select('webform_submitted_data', 'w')
+      ->fields('w', array('cid', 'nid', 'data'))
+      ->condition('data', '%"order_id":"' . db_like($orderID) . '"%', 'LIKE')
+      ->condition('nid', 528, '=')
+      ->execute()
+      ->fetchAll();
+    if (!empty($result)) {
+      foreach ($result as $key => $object) {
+        $json = json_decode($object->data);
+        if ($json) {
+          $price = getPrice($json->line_item_id, $json->quantity);
+          $lineitems[] = array('charge' => $price, 'order_id' => $orderID, 'line_item_id' => $json->line_item_id);
+        }
+      }
+    }
+  }
   return $lineitems;
 }
 
@@ -123,9 +140,19 @@ function addPayments($response, $payment_method, $payment_data, $order, $lineite
       );
       $transaction->payment_method = 'iats_ach_eft_customer_code';
       $transaction->status = COMMERCE_PAYMENT_STATUS_PENDING;
-      $date = date('jS M Y', strtotime($attributes['dates']['beginDate']));
-      // Change date to 9th of every month
-      $date = '9th ' . date('M Y', strtotime($attributes['dates']['beginDate']));
+      if (!empty($attributes['dates'])) {
+        $date = date('jS M Y', strtotime($attributes['dates']['beginDate']));
+        // Change date to 9th of every month
+        $date = '9th ' . date('M Y', strtotime($attributes['dates']['beginDate']));
+        $processDate = date('Y-m-09', strtotime($attributes['dates']['beginDate']));
+        $onetime = FALSE;
+      }
+      else {
+        $date = date('jS M Y', strtotime('+1 day'));
+        $processDate = date('Y-m-d', strtotime('+1 day'));
+        // This is a one time payment.
+        $onetime = TRUE;
+      }
       $transaction->message = t("Payment will be processed on {$date}");
 
       // Save the transaction information.
@@ -137,10 +164,59 @@ function addPayments($response, $payment_method, $payment_data, $order, $lineite
             'customer_code' => $response['CUSTOMERCODE'],
             'transaction_id' => $transaction->transaction_id,
             'amount' => $attributes['charge']['amount'] . ' ' . $attributes['charge']['currency'],
-            'scheduled_date' => date('Y-m-09', strtotime($attributes['dates']['beginDate'])),
+            'scheduled_date' => $processDate,
             'line_item_id' => $attributes['line_item_id'],
           ))
           ->execute();
+
+        // Cancel the failed payment for this order and updated the future orders.
+        if ($onetime) {
+          $query = db_select('webform_submitted_data', 'w')
+            ->fields('w', array('sid'))
+            ->condition('data', '%"order_id":"' . db_like($attributes['order_id']) . '"%', 'LIKE')
+            ->condition('nid', 528, '=')
+            ->range(0,1)
+            ->execute()->fetchAll();
+          if ($query[0]->sid) {
+            $sub = db_select('webform_submitted_data', 'w')
+              ->fields('w', array('cid', 'data'))
+              ->condition('sid', $query[0]->sid, '=')
+              ->condition('nid', 528, '=')
+              ->condition('cid', array(5, 6), 'IN')
+              ->execute()->fetchAll();
+            foreach ($sub as $data) {
+              if ($data->cid == 5) {
+                $prevOrder = $data->data;
+              }
+              if ($data->cid == 6) {
+                $prevTrxn = json_decode($data->data);
+              }
+            }
+	    if ($prevTrxn) {
+              db_update('grocery_checkout_schedule')
+                ->fields(array('is_cancelled' => 1))
+                ->condition('transaction_id', $prevTrxn, 'IN')
+                ->execute();
+            }
+	    if ($prevOrder) {
+              db_update('commerce_payment_transaction')
+                ->fields(array('order_id' => $prevOrder))
+                ->condition('order_id', $attributes['order_id'], '=')
+                ->execute();
+              db_update('grocery_checkout_schedule')
+                ->fields(array('order_id' => $prevOrder))
+                ->condition('order_id', $attributes['order_id'], '=')
+                ->execute();
+              db_delete('grocery_checkout_schedule')
+                ->condition('order_id', $attributes['order_id'])
+                ->execute();
+              db_update('grocery_checkout_schedule')
+                ->fields(array('customer_code' => $response['CUSTOMERCODE']))
+                ->condition('order_id', $prevOrder, '=')
+                ->execute();
+            }
+          }
+        }
       }
     }
   }
@@ -307,7 +383,6 @@ function generatePayments() {
 }
 
 function grocery_checkout_cron() {
-  generatePayments();
   // Check if pending order date matches current date.
   $query = db_select('grocery_checkout_schedule', 'g')
     ->fields('g')
@@ -451,11 +526,15 @@ function grocery_checkout_form_webform_client_form_528_alter(&$form, &$form_stat
     $query = db_select('commerce_payment_transaction', 't')
       ->fields('t')
       ->fields('g', array('amount', 'line_item_id', 'scheduled_date', 'order_id'))
+      ->fields('o', array('order_number'))
       ->condition('t.uid', $user->uid, '=')
+      ->condition('g.is_cancelled', 0, '=')
       ->condition('t.status', 'failure', '=');
     $query->innerJoin('grocery_checkout_schedule', 'g', 'g.transaction_id = t.transaction_id');
+    $query->innerJoin('commerce_order', 'o', 'o.order_id = t.order_id');
+    $query->groupBy('g.line_item_id');
     $result = $query->execute()->fetchAll();
-    
+
     if (!empty($result)) {
       foreach ($result as $key => $object) {
         $form['submitted']['order']['#value'] = $object->order_id;
@@ -464,16 +543,22 @@ function grocery_checkout_form_webform_client_form_528_alter(&$form, &$form_stat
           ->fields('w', array('cid', 'nid', 'data'))
           ->condition('data', '%"line_item_id":"' . db_like($object->line_item_id) . '"%', 'LIKE')
           ->condition('nid', 517, '=')
+          ->orderBy('cid', 'DESC')
           ->execute()
           ->fetchAll();
+
         foreach ($lineitem as $items) {
           $json = json_decode($items->data); 
-          $productIds[] = $json->product_id;
-      
+          if ($json->line_item_id == $object->line_item_id) {
+            $products[$json->product_id] = $json->quantity;
+          }
         }
-          $form['submitted']['sku']['#productids'] = $productIds;
-        
+        $trxns[] = $object->transaction_id;
       }
+      $form['submitted']['transaction_id']['#value'] = json_encode($trxns);
+      drupal_add_js(array('grocery_checkout' => array('quantities' => json_encode($products))), array('type' => 'setting'));
+      drupal_add_js(drupal_get_path('module', 'grocery_checkout') . '/grocery_checkout.js');
     }
   }
 }
+
