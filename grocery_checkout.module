@@ -562,3 +562,10 @@ function grocery_checkout_form_webform_client_form_528_alter(&$form, &$form_stat
   }
 }
 
+function grocery_checkout_form_alter(&$form, &$form_state, $form_id) {
+  if ($form_id == "commerce_checkout_form_review" && !empty($form_state['order']->payment_methods['iats_ach_eft_customer_code|rules_one_time_ach'])) {
+    $order = array('#tree', 'transit_number', 'bank_number', 'number', 'type');
+    $bank_account = $form['commerce_payment']['payment_details']['bank_account'];
+    $form['commerce_payment']['payment_details']['bank_account'] = array_merge(array_flip($order), $bank_account);
+  }
+}
